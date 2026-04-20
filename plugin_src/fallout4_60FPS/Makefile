@@ -93,7 +93,7 @@ plugin_common:
 .PHONY: clean
 .DEFAULT_GOAL := all
 
-all: build-info $(TARGET)
+all: build-info plugin_common $(TARGET)
 
 clean:
 	rm -rf $(TARGET) $(TARGETSTUB) $(INTDIR) $(OBJS)
