@@ -18,7 +18,7 @@ TARGET_ELF   := $(BUILD_FOLDER)/elf$(TYPE)/$(OUTPUT_PRX)
 TARGETSTUB   := $(OUTPUT_PRX).so
 
 # Libraries linked into the ELF.
-LIBS := -lSceLibcInternal -lGoldHEN_Hook -lkernel -lSceSysmodule
+LIBS := -lSceLibcInternal -lSceVideoOut -lGoldHEN_Hook -lkernel -lSceSysmodule
 
 EXTRAFLAGS := $(DEBUG_FLAGS) $(LOG_TYPE) -fcolor-diagnostics -Wall
 
@@ -50,38 +50,47 @@ _unused     := $(shell mkdir -p $(INTDIR))
 UNAME_S     := $(shell uname -s)
 
 ifeq ($(UNAME_S),Linux)
-    CC      := $(TOOLCHAIN)/bin/clang
-    CXX     := $(TOOLCHAIN)/bin/clang++
-    LD      := $(TOOLCHAIN)/bin/ld.lld
-    OBJCOPY := $(TOOLCHAIN)/bin/objcopy
+        CC      := clang
+        CCX     := clang++
+        LD      := ld.lld
+        CDIR    := linux
 endif
 ifeq ($(UNAME_S),Darwin)
-    CC      := $(TOOLCHAIN)/bin/clang
-    CXX     := $(TOOLCHAIN)/bin/clang++
-    LD      := $(TOOLCHAIN)/bin/ld.lld
-    OBJCOPY := $(TOOLCHAIN)/bin/objcopy
+        CC      := /usr/local/opt/llvm/bin/clang
+        CCX     := /usr/local/opt/llvm/bin/clang++
+        LD      := /usr/local/opt/llvm/bin/ld.lld
+        CDIR    := macos
 endif
 
-$(TARGET): $(OBJS)
-	$(LD) $(LDFLAGS) $^ -o $(TARGET_ELF)
-	$(TOOLCHAIN)/bin/$(OO_PS4_TOOLCHAIN_TYPE)/create-fself -in=$(TARGET_ELF) -out=$(TARGET) --paid 0x3800000000000011
+$(TARGET): $(INTDIR) $(OBJS)
+	$(LD) $(GH_SDK)/build/crtprx.o $(INTDIR)/*.o -o $(TARGET_ELF).elf $(LDFLAGS)
+	$(TOOLCHAIN)/bin/$(CDIR)/create-fself -in=$(TARGET_ELF).elf -out=$(TARGET_ELF).oelf --lib=$(TARGET).prx --paid 0x3800000000000011
+
+$(TARGETSTUB): $(INTDIR) $(STUBOBJS)
+	$(CC) $(INTDIR)/*.o.stub -o $(TARGETSTUB) -target x86_64-pc-linux-gnu -shared -fuse-ld=lld -ffreestanding -nostdlib -fno-builtin -L$(TOOLCHAIN)/lib $(LIBS)
 
 $(INTDIR)/%.o: $(PROJDIR)/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -o $@ $<
 
 $(INTDIR)/%.o: $(PROJDIR)/%.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CCX) $(CXXFLAGS) -o $@ $<
 
-$(INTDIR)/%.o: $(COMMONDIR)/%.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+$(INTDIR)/%.o.stub: $(PROJDIR)/%.c
+	$(CC) -target x86_64-pc-linux-gnu -ffreestanding -nostdlib -fno-builtin -fPIC $(O_FLAG) -s -c -o $@ $<
 
 $(INTDIR)/%.o.stub: $(PROJDIR)/%.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CCX) -target x86_64-pc-linux-gnu -ffreestanding -nostdlib -fno-builtin -fPIC $(O_FLAG) -s -c -o $@ $<
 
-$(INTDIR)/%.o.stub: $(COMMONDIR)/%.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+build-info:
+	$(shell echo "#define GIT_COMMIT \"$(shell git rev-parse HEAD)\"" > $(COMMON_DIR)/git_ver.h)
+	$(shell echo "#define GIT_VER \"$(shell git branch --show-current)\"" >> $(COMMON_DIR)/git_ver.h)
+	$(shell echo "#define GIT_NUM $(shell git rev-list HEAD --count)" >> $(COMMON_DIR)/git_ver.h)
+	$(shell echo "#define BUILD_DATE \"$(shell date '+%b %d %Y @ %T')\"" >> $(COMMON_DIR)/git_ver.h)
 
 .PHONY: clean
+.DEFAULT_GOAL := all
+
+all: build-info $(TARGET)
 
 clean:
-	rm -f $(TARGET) $(TARGET_ELF) $(OBJS) $(STUBOBJS)
+	rm -rf $(TARGET) $(TARGETSTUB) $(INTDIR) $(OBJS)
